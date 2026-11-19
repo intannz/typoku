@@ -2,6 +2,8 @@
 
 **TypoKu** adalah platform asisten penulisan berbasis kecerdasan buatan (*Artificial Intelligence/AI*) yang dirancang untuk membantu mahasiswa, dosen, dan akademisi Indonesia dalam menyempurnakan kualitas tulisan. TypoKu menyediakan fitur koreksi ejaan dan salah ketik (*typo*), parafrase kalimat, penerjemahan naskah akademik, serta ekstraksi teks dari dokumen PDF dan DOCX.
 
+Akses fitur AI dikelola melalui sistem langganan berbayar dengan pembayaran **QRIS** (Midtrans Snap).
+
 ---
 
 ## Fitur Utama
@@ -23,6 +25,18 @@ Membantu menerjemahkan teks akademik dari bahasa Indonesia ke bahasa Inggris mau
 - Mendukung penerjemahan dua arah (Indonesia–Inggris).
 - Mempertahankan konteks dan terminologi akademik.
 
+### 4. Akun & Langganan
+- Login dengan email + kata sandi, atau **Google Sign-In**.
+- Lupa kata sandi melalui tautan reset yang dikirim ke email.
+- Tiga pilihan paket: **Cepat** (1 hari), **Pro** (30 hari), dan **Pro Plus** (90 hari).
+- Riwayat transaksi dan status langganan aktif dapat dilihat dari dropdown profil.
+
+### 5. Pembayaran QRIS
+- Pembayaran memakai **Midtrans Snap popup** dengan kanal **QRIS** saja.
+- Pesanan dibuat di backend dengan harga yang diambil langsung dari database, ditambah biaya admin tetap.
+- Batas pembayaran **15 menit** sejak pesanan dibuat.
+- Halaman checkout memantau status pembayaran secara otomatis, termasuk saat popup sudah ditutup, lalu mengarahkan ke halaman **berhasil** atau **kedaluwarsa**.
+
 ---
 
 ## Teknologi yang Digunakan
@@ -31,13 +45,21 @@ Membantu menerjemahkan teks akademik dari bahasa Indonesia ke bahasa Inggris mau
 - **React.js** : membangun antarmuka aplikasi.
 - **Vite** : development server dan build tool.
 - **React Router DOM** : mengatur navigasi antar halaman.
+- **TanStack Query** : pengambilan data, cache, dan sinkronisasi status server.
 - **React Icons** : menyediakan ikon antarmuka.
+- **Midtrans Snap.js** : popup pembayaran QRIS.
+- **Google Identity Services** : login Google.
 - **CSS** : mengatur tampilan dan responsivitas aplikasi.
 
 ### Backend
-- **Node.js & Express** : bahasa pemrograman dan framework REST API.
-- **Google GenAI SDK** : integrasi dengan model AI Gemini (`gemini-3.8-flash`).
+- **Node.js & Express 5** : bahasa pemrograman dan framework REST API.
+- **MySQL (mysql2)** : basis data dengan connection pool dan dukungan TLS.
+- **Google GenAI SDK** : integrasi dengan model AI Gemini (`gemini-3.8-flash`) beserta fallback model.
+- **Midtrans Client** : pembuatan transaksi Snap dan pemeriksaan status transaksi.
+- **JWT & bcryptjs** : autentikasi Bearer token dan hashing kata sandi.
+- **express-validator** : validasi body request.
 - **pdf-parse & mammoth** : pustaka ekstraksi teks dari file PDF dan Word (DOCX).
+- **pdfkit** : pembuatan berkas hasil unduhan.
 - **Multer** : penanganan unggahan file (*file upload*).
 - **Helmet, CORS & Morgan** : keamanan HTTP, akses lintas origin, dan logging request.
 - **dotenv** : pengelolaan variabel lingkungan.
@@ -54,23 +76,31 @@ typoku/
 │   ├── src/
 │   │   ├── assets/         # Gambar dan logo
 │   │   ├── components/     # Komponen UI yang dapat digunakan ulang
+│   │   ├── context/        # AuthContext (sesi pengguna)
+│   │   ├── hooks/          # Hook data & pembayaran (usePaymentPolling, dll.)
 │   │   ├── layouts/        # Layout halaman aplikasi
-│   │   ├── pages/          # Halaman aplikasi
-│   │   └── services/       # Konfigurasi dan layanan API
+│   │   ├── lib/            # Konfigurasi API & TanStack Query
+│   │   ├── pages/          # Halaman aplikasi (Paket, Checkout, PembayaranLunas, ...)
+│   │   ├── services/       # Konfigurasi dan layanan API
+│   │   └── utils/          # Util Snap.js & pembantu
 │   └── package.json
 │
 ├── backend/
+│   ├── confiq/             # Konfigurasi koneksi database
 │   ├── controllers/        # Logika pemrosesan endpoint
-│   ├── middleware/         # Middleware kustom (masih kosong)
+│   ├── jobs/               # Cron expireSubscription & reconcilePayments
+│   ├── middleware/         # Middleware authenticate, rateLimiter, checkSubscription
 │   ├── routes/             # Definisi rute API
+│   ├── utils/              # Util Midtrans & pembantu
 │   ├── .env                # Variabel lingkungan (tidak di-commit)
 │   ├── .gitignore
 │   ├── package.json
 │   ├── package-lock.json
+│   ├── schema.sql          # Skema database MySQL
 │   └── server.js           # Entry point Express
 │
 ├── .gitignore              # Pengecualian file sensitif
-└── README.md
+└── readme.md
 ```
 
 ---
@@ -84,6 +114,7 @@ Pastikan perangkat telah memiliki lingkungan berikut dengan versi yang didukung 
 - **Node.js**: v20.x atau lebih baru (disarankan LTS terbaru)
 - **npm**: v10.x atau lebih baru
 - **Git**: v2.x atau lebih baru
+- **MySQL**: v8.x atau lebih baru (lokal maupun layanan terkelola seperti Aiven)
 
 ### 1. Clone Repositori
 
@@ -102,6 +133,17 @@ npm run dev
 
 Aplikasi Vite dapat diakses melalui: `http://localhost:5173`
 
+Konfigurasi `frontend/.env`:
+
+```env
+VITE_API_BASE_URL=http://localhost:8000
+VITE_GOOGLE_CLIENT_ID=xxxxx.apps.googleusercontent.com
+```
+
+`VITE_GOOGLE_CLIENT_ID` harus **sama** dengan `GOOGLE_CLIENT_ID` di backend.
+
+Frontend **tidak** menyimpan konfigurasi Midtrans. `client_key` dan `midtrans_is_production` selalu dikirim backend melalui response API.
+
 ### 3. Menjalankan Backend
 
 Buka terminal baru pada direktori `backend`:
@@ -111,10 +153,41 @@ cd backend
 npm install
 ```
 
+Siapkan database MySQL lalu jalankan skema:
+
+```bash
+mysql -u root -p typoku < schema.sql
+```
+
 Konfigurasi file `.env` di folder `backend`:
+
 ```env
 PORT=8000
-GEMINI_API_KEY=AIzaSy_GantiDenganApiKeyGeminiKamu
+NODE_ENV=development
+APP_URL=http://localhost:5173
+
+# Database
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=
+DB_NAME=typoku
+DB_SSL=false
+
+# Autentikasi
+JWT_SECRET=ganti_dengan_string_acak_panjang
+JWT_EXPIRES_IN=7d
+GOOGLE_CLIENT_ID=xxxxx.apps.googleusercontent.com
+
+# AI
+GEMINI_API_KEY=GantiDenganApiKeyGeminiKamu
+
+# Midtrans (sandbox untuk pengembangan lokal)
+MIDTRANS_SERVER_KEY=SB-Mid-server-xxxxxxxxxxxxxxxx
+MIDTRANS_CLIENT_KEY=SB-Mid-client-xxxxxxxxxxxxxxxx
+MIDTRANS_IS_PRODUCTION=false
+PAYMENT_METHODS=qris
+ADMIN_FEE=700
 ```
 
 Jalankan server Express:
@@ -129,6 +202,23 @@ npm start
 ```
 
 Backend dapat diakses di `http://localhost:8000`.
+
+> **Catatan Midtrans:** pasangan server key dan client key harus dari environment yang sama. Kunci sandbox diawali `SB-Mid-...`, kunci production diawali `Mid-...`. Jangan pernah menaruh server key di frontend atau di repository. Lihat bagian [Konfigurasi Midtrans](#konfigurasi-midtrans) untuk perpindahan ke production.
+
+### 4. Menjalankan dengan Docker (opsional)
+
+Repositori menyertakan konfigurasi Docker untuk menjalankan frontend dan backend sekaligus:
+
+```bash
+docker compose up -d --build --force-recreate
+```
+
+| Layanan | Alamat |
+|---|---|
+| Frontend (vite preview) | `http://localhost:4173` |
+| Backend (Express) | `http://localhost:8000` |
+
+Karena frontend dibangun sebagai berkas statis, perubahan kode di `frontend/src` **wajib** disertai `docker compose build frontend`; `restart` saja tidak cukup. Nilai `VITE_API_BASE_URL` dan `VITE_GOOGLE_CLIENT_ID` dibakar ke bundle saat build melalui `build.args` di `docker-compose.yml`.
 
 ---
 
@@ -185,7 +275,7 @@ Mengunduh hasil perbaikan teks dalam format PDF, TXT, atau HTML.
 
 ---
 
-### 2. Parafrase Cerdas
+### 4. Parafrase Cerdas
 Menyusun ulang kalimat agar lebih sesuai dengan gaya bahasa akademik.
 
 - **Endpoint:** `POST /api/parafrase`
@@ -209,7 +299,7 @@ Menyusun ulang kalimat agar lebih sesuai dengan gaya bahasa akademik.
 
 ---
 
-### 3. Penerjemah Akademik
+### 5. Penerjemah Akademik
 Menerjemahkan teks akademik dua arah (Indonesia–Inggris).
 
 - **Endpoint:** `POST /api/terjemah`
@@ -235,13 +325,63 @@ Menerjemahkan teks akademik dua arah (Indonesia–Inggris).
 
 ---
 
+### 6. Paket & Langganan
+
+- **GET `/api/packages`** — daftar paket aktif (publik).
+- **GET `/api/subscriptions/my-access`** — status akses langganan pengguna.
+- **GET `/api/subscriptions/my-history`** — riwayat langganan.
+
+### 7. Pembayaran
+
+- **POST `/api/orders`** — membuat pesanan dan Snap token. Body: `packageId`, `paymentMethod` (`qris`).
+- **GET `/api/orders/:orderCode`** — detail pesanan beserta `can_reopen`, `snap_token`, dan `client_key` selama masih `pending`.
+- **GET `/api/orders/my`** — riwayat transaksi pengguna.
+- **GET `/api/payments/config`** — `{ admin_fee, payment_methods, midtrans_is_production }` (publik, tanpa rahasia).
+- **GET `/api/payments/status/:orderCode`** — status terkini untuk polling frontend.
+- **POST `/api/payments/notification`** — webhook Midtrans (dipanggil server Midtrans, bukan frontend).
+
+Status pesanan: `pending`, `paid`, `expired`, `cancelled`, `failed`.
+
+---
+
+## Konfigurasi Midtrans
+
+TypoKu hanya memakai kanal **QRIS**. Alurnya:
+
+1. Frontend meminta pembuatan pesanan ke `POST /api/orders`.
+2. Backend membuat transaksi Snap dengan `enabled_payments: ["other_qris"]` dan masa berlaku 15 menit.
+3. Frontend memuat `snap.js` lalu menampilkan popup QRIS.
+4. Setelah QR dipindai, Midtrans mengirim webhook yang mengubah status pesanan menjadi `paid` di database.
+5. Frontend membaca status melalui `GET /api/payments/status/:orderCode` setiap 5 detik, lalu mengarahkan pengguna ke halaman berhasil.
+
+Pemantauan status **tetap berjalan setelah popup ditutup**, karena QRIS biasanya dipindai dari ponsel. Jika pengguna menutup tab lalu kembali, halaman checkout memeriksa ulang status pesanan sehingga pesanan yang sudah lunas langsung diarahkan ke halaman berhasil.
+
+### Pindah dari Sandbox ke Production
+
+| Langkah | Keterangan |
+|---|---|
+| 1. Buat kunci production | Dashboard Midtrans → Settings → Access Keys → General Credentials |
+| 2. Aktifkan kanal QRIS | Settings → Payment Methods → GoPay Dynamic QRIS → sampai berstatus **Active** |
+| 3. Isi rekening pencairan | Settings → Withdrawal |
+| 4. Daftarkan Notification URL | `https://<domain-backend>/api/payments/notification` |
+| 5. Isi Finish Redirect URL | `https://<domain-frontend>/paket` |
+| 6. Ubah environment backend | `MIDTRANS_SERVER_KEY`, `MIDTRANS_CLIENT_KEY`, `MIDTRANS_IS_PRODUCTION=true`, `PAYMENT_METHODS=qris` |
+
+Frontend **tidak perlu diubah** dan tidak perlu di-rebuild: `client_key` serta `midtrans_is_production` datang dari API. Namun cache TanStack Query dipersist ke `localStorage`, sehingga pengguna lama sebaiknya logout lalu login (atau memakai jendela incognito) agar konfigurasi sandbox lama tidak terpakai.
+
+Verifikasi di DevTools: `snap.js` harus dimuat dari `app.midtrans.com`, dan `data-client-key` pada elemen `#midtrans-snap-script` harus diawali `Mid-client-`.
+
+---
+
 ### Batasan Penggunaan & Catatan Integrasi
 1. **Batasan Kata (Word Limit):** Disarankan agar *frontend* membatasi input maksimal **1.000 – 2.000 kata** per pengiriman API demi menjaga waktu respons AI tetap di bawah 10 detik.
 2. **Ukuran File Dokumen:** Maksimal **5 MB** untuk format `.pdf` dan `.docx`.
-3. **Alur UI:**
+3. **Akses Fitur AI:** Seluruh endpoint AI memerlukan autentikasi Bearer JWT **dan** langganan aktif. Tanpa login menghasilkan `401`; tanpa langganan aktif menghasilkan `403`.
+4. **Alur UI:**
    - User mengunggah file => Frontend memanggil `/api/cek-typo` (file dikirim langsung).
    - Backend mengekstrak teks, memperbaiki typo, dan mengembalikan `result_text` berisi HTML dengan sorotan kuning.
    - Untuk Parafrase / Terjemah, frontend mengirim teks JSON ke endpoint yang sesuai.
+5. **Batas Waktu Pesanan:** Setiap pesanan berlaku **15 menit**. Pesanan yang kedaluwarsa tidak dapat dibayar dan pengguna harus membuat pesanan baru.
 
 ---
 
