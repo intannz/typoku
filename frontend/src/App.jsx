@@ -1,53 +1,132 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-
-// Import Layouts
-import MainLayout from './layouts/MainLayout';
-import DashboardLayout from './layouts/DashboardLayout';
+import { useEffect } from 'react';
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+  useLocation,
+} from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import AuthLayout from './layouts/AuthLayout';
-
-// Import Pages
+import MainLayout from './layouts/MainLayout';
+import QueryBoundary from './components/QueryBoundary';
+import CheckEmail from './pages/CheckEmail';
+import Checkout, { CheckoutSkeleton } from './pages/Checkout';
+import ForgotPassword from './pages/ForgotPassword';
 import Home from './pages/Home';
-import Harga from './pages/Harga';
-import Info from './pages/Info';
 import Login from './pages/Login';
+import Paket, { PaketSkeleton } from './pages/Paket';
+import PembayaranExpired, { ExpiredSkeleton } from './pages/PembayaranExpired';
+import PembayaranLunas, { PaymentSkeleton } from './pages/PembayaranLunas';
 import Register from './pages/Register';
-import Dashboard from './pages/Dashboard';
-import KoreksiTypo from './pages/KoreksiTypo';
-import Parafrase from './pages/Parafrase';
-import Terjemah from './pages/Terjemah';
-import Langganan from './pages/Langganan';
-import Pengaturan from './pages/Pengaturan';
+import ResetPassword from './pages/ResetPassword';
+
+function RequireAuth({ children }) {
+  const { user } = useAuth();
+  const location = useLocation();
+
+  if (!user) {
+    const redirect = encodeURIComponent(`${location.pathname}${location.search}`);
+    return <Navigate to={`/login?redirect=${redirect}`} replace />;
+  }
+
+  return children;
+}
+
+function ScrollToTop() {
+  const { pathname, search } = useLocation();
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+  }, [pathname, search]);
+
+  useEffect(() => {
+    function handleClick(event) {
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+      const anchor =
+        event.target instanceof Element ? event.target.closest('a[href]') : null;
+
+      if (!anchor) return;
+
+      const target = anchor.getAttribute('target');
+      if ((target && target !== '_self') || anchor.hasAttribute('download')) return;
+
+      const url = new URL(anchor.href, window.location.href);
+      const current = window.location;
+
+      if (url.origin !== current.origin) return;
+      if (url.pathname !== current.pathname || url.search !== current.search) return;
+
+      window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+    }
+
+    document.addEventListener('click', handleClick, true);
+    return () => document.removeEventListener('click', handleClick, true);
+  }, []);
+
+  return null;
+}
 
 export default function App() {
   return (
     <Router>
-      <Routes>
-        {/* Rute Publik (Navbar & Footer) */}
-        <Route element={<MainLayout />}>
-          <Route path="/" element={<Home />} />
-          <Route path="/harga" element={<Harga />} />
-          <Route path="/tentang" element={<Info />} />
-          <Route path="/bantuan" element={<Info />} />
-          <Route path="/privasi" element={<Info />} />
-          <Route path="/syarat" element={<Info />} />
-        </Route>
+      <ScrollToTop />
+      <AuthProvider>
+        <Routes>
+          <Route element={<AuthLayout />}>
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/lupa-kata-sandi" element={<ForgotPassword />} />
+            <Route path="/cek-email" element={<CheckEmail />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+          </Route>
 
-        {/* Rute Autentikasi (AuthLayout) */}
-        <Route element={<AuthLayout />}>
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-        </Route>
-
-        {/* Rute Setelah Login (Sidebar) */}
-        <Route element={<DashboardLayout />}>
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/koreksi" element={<KoreksiTypo />} />
-          <Route path="/parafrase" element={<Parafrase />} />
-          <Route path="/terjemah" element={<Terjemah />} />
-          <Route path="/langganan" element={<Langganan />} />
-          <Route path="/pengaturan" element={<Pengaturan />} />
-        </Route>
-      </Routes>
+          <Route element={<MainLayout />}>
+            <Route path="/" element={<Home />} />
+            <Route
+              path="/paket"
+              element={
+                <QueryBoundary fallback={<PaketSkeleton />}>
+                  <Paket />
+                </QueryBoundary>
+              }
+            />
+            <Route
+              path="/checkout/:packageId"
+              element={
+                <RequireAuth>
+                  <QueryBoundary fallback={<CheckoutSkeleton />}>
+                    <Checkout />
+                  </QueryBoundary>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/pembayaran/lunas/:orderCode"
+              element={
+                <RequireAuth>
+                  <QueryBoundary fallback={<PaymentSkeleton />}>
+                    <PembayaranLunas />
+                  </QueryBoundary>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/pembayaran/expired/:orderCode"
+              element={
+                <RequireAuth>
+                  <QueryBoundary fallback={<ExpiredSkeleton />}>
+                    <PembayaranExpired />
+                  </QueryBoundary>
+                </RequireAuth>
+              }
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
+        </Routes>
+      </AuthProvider>
     </Router>
   );
 }

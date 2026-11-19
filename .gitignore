@@ -4,10 +4,8 @@ frontend/dist/
 frontend/.vite/
 
 # BACKEND
-backend/venv/
-backend/__pycache__/
-backend/*.pyc
-backend/*.joblib
+backend/node_modules/
+backend/.env
 
 # SYSTEM & ENVIRONMENT
 .DS_Store
@@ -16,3 +14,10 @@ Thumbs.db
 .env.local
 .vscode/
 *.log
+
+# DOKUMENTASI
+# Hanya readme.md di root yang dipublikasikan. Garis miring di depan (/) membatasi
+# pengecualian hanya untuk folder root, sehingga README.md di subfolder tetap diabaikan.
+*.md
+!/readme.md
+!/README.md
